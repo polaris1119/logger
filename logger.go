@@ -155,10 +155,8 @@ func NewLoggerContext(ctx context.Context) *Logger {
 		ctx: ctx,
 	}
 
-	if ctx != nil {
-		// 第一个元素用于最后 flush 时存 uri 信息
-		objLogger.resetBuf()
-	}
+	// 第一个元素用于最后 flush 时存 uri 信息
+	objLogger.resetBuf()
 
 	return objLogger
 }
@@ -205,6 +203,10 @@ func (l *Logger) appendDebug(debugstr string) {
 	}
 
 	l.debugBuf = append(l.debugBuf, debugstr)
+}
+
+func (l *Logger) SetContext(ctx context.Context) {
+	l.ctx = ctx
 }
 
 func (l *Logger) resetBuf() {
