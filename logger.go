@@ -37,6 +37,8 @@ var (
 	debugFile = ""
 	errorFile = ""
 
+	accessFile = ""
+
 	level int
 )
 
@@ -48,6 +50,8 @@ func Init(logPath, tmpLevel string) {
 	infoFile = logPath + "/info.log"
 	debugFile = logPath + "/debug.log"
 	errorFile = logPath + "/error.log"
+
+	accessFile = logPath + "/access.log"
 
 	level = levelMap[strings.ToUpper(tmpLevel)]
 }
@@ -101,7 +105,7 @@ func Debugf(format string, args ...interface{}) {
 		return
 	}
 
-	file, err := os.OpenFile(debugFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0777)
+	file, err := openFile(debugFile)
 	if err != nil {
 		return
 	}
@@ -114,7 +118,7 @@ func Debugln(args ...interface{}) {
 		return
 	}
 
-	file, err := os.OpenFile(debugFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0777)
+	file, err := openFile(debugFile)
 	if err != nil {
 		return
 	}
@@ -207,6 +211,15 @@ func (l *Logger) appendDebug(debugstr string) {
 
 func (l *Logger) SetContext(ctx context.Context) {
 	l.ctx = ctx
+}
+
+func (l *Logger) AccessLog(args ...interface{}) {
+	file, err := openFile(accessFile)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	New(file).Println(args...)
 }
 
 func (l *Logger) resetBuf() {
