@@ -154,7 +154,7 @@ type Logger struct {
 
 func New(out io.Writer) *Logger {
 	return &Logger{
-		Logger: log.New(out, "", log.Ltime),
+		Logger: log.New(out, "", log.Lmicroseconds),
 	}
 }
 
