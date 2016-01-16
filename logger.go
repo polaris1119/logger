@@ -132,6 +132,11 @@ func Debugln(args ...interface{}) {
 }
 
 func openFile(filename string) (*os.File, error) {
+	if filename == "" {
+		log.Println("[WARNING] You must call logger.Init function First!")
+		return nil, fmt.Errorf("[WARNING] You must call logger.Init function First!")
+	}
+
 	filename += "-" + time.Now().Format("060102")
 
 	return os.OpenFile(filename, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0777)
