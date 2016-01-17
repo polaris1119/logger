@@ -22,24 +22,27 @@ import (
 const (
 	ERROR = iota
 	INFO
+	SQL
 	DEBUG
 )
 
 var levelMap = map[string]int{
 	"ERROR": ERROR,
 	"INFO":  INFO,
+	"SQL":   SQL,
 	"DEBUG": DEBUG,
 }
 
 var (
 	// 日志文件
-	infoFile  = ""
 	debugFile = ""
+	sqlFile   = ""
+	infoFile  = ""
 	errorFile = ""
 
 	accessFile = ""
 
-	level int
+	level = DEBUG
 )
 
 // Init Init("", "INFO")
@@ -47,8 +50,9 @@ func Init(logPath, tmpLevel string) {
 
 	os.Mkdir(logPath, 0777)
 
-	infoFile = logPath + "/info.log"
 	debugFile = logPath + "/debug.log"
+	sqlFile = logPath + "/sql.log"
+	infoFile = logPath + "/info.log"
 	errorFile = logPath + "/error.log"
 
 	accessFile = logPath + "/access.log"
@@ -126,7 +130,7 @@ func Debugln(args ...interface{}) {
 	// 加上文件调用和行号
 	_, callerFile, line, ok := runtime.Caller(1)
 	if ok {
-		args = append([]interface{}{"文件：", filepath.Base(callerFile), "行号:", line}, args...)
+		args = append([]interface{}{"file:", filepath.Base(callerFile), "line:", line}, args...)
 	}
 	New(file).Println(args...)
 }
@@ -146,10 +150,12 @@ type Logger struct {
 	*log.Logger
 
 	// TODO:append 数据时，没有加锁，所以，如果同一个 Logger 实例，多个goroutine并发可能顺序会乱
+	debugBuf []interface{}
+	sqlBuf   []interface{}
 	infoBuf  []interface{}
 	errorBuf []interface{}
-	debugBuf []interface{}
-	ctx      context.Context
+
+	ctx context.Context
 }
 
 func New(out io.Writer) *Logger {
@@ -214,6 +220,22 @@ func (l *Logger) appendDebug(debugstr string) {
 	l.debugBuf = append(l.debugBuf, debugstr)
 }
 
+func (l *Logger) Sqlf(format string, args ...interface{}) {
+	l.appendSql(fmt.Sprintf(format, args...))
+}
+
+func (l *Logger) Sqlln(args ...interface{}) {
+	l.appendSql(fmt.Sprintln(args...))
+}
+
+func (l *Logger) appendSql(info string) {
+	if level < SQL {
+		return
+	}
+
+	l.sqlBuf = append(l.sqlBuf, info)
+}
+
 func (l *Logger) SetContext(ctx context.Context) {
 	l.ctx = ctx
 }
@@ -228,9 +250,10 @@ func (l *Logger) AccessLog(args ...interface{}) {
 }
 
 func (l *Logger) resetBuf() {
+	l.debugBuf = make([]interface{}, 1, 20)
+	l.sqlBuf = make([]interface{}, 1, 20)
 	l.infoBuf = make([]interface{}, 1, 20)
 	l.errorBuf = make([]interface{}, 1, 20)
-	l.debugBuf = make([]interface{}, 1, 5)
 }
 
 func (l *Logger) Flush() {
@@ -239,8 +262,39 @@ func (l *Logger) Flush() {
 		file *os.File
 		err  error
 
-		uri = l.ctx.Value("uri")
+		uri interface{} = ""
 	)
+
+	if l.ctx != nil {
+		uri = l.ctx.Value("uri")
+	}
+
+	if len(l.debugBuf) > 1 {
+		file, err = openFile(debugFile)
+		if err == nil {
+			l.Logger = log.New(file, "", log.Ltime)
+			defer file.Close()
+
+			l.debugBuf[0] = uri
+			l.Println(l.debugBuf...)
+		}
+	}
+
+	if len(l.sqlBuf) > 1 {
+		file, err = openFile(sqlFile)
+		if err == nil {
+			l.Logger = log.New(file, "", log.Ltime)
+			defer file.Close()
+
+			if uri == "" {
+				l.sqlBuf[0] = "[SQL]"
+			} else {
+				l.sqlBuf[0] = uri
+			}
+
+			l.Println(l.sqlBuf...)
+		}
+	}
 
 	if len(l.infoBuf) > 1 {
 		file, err = openFile(infoFile)
@@ -261,17 +315,6 @@ func (l *Logger) Flush() {
 
 			l.errorBuf[0] = uri
 			l.Println(l.errorBuf...)
-		}
-	}
-
-	if len(l.debugBuf) > 1 {
-		file, err = openFile(debugFile)
-		if err == nil {
-			l.Logger = log.New(file, "", log.Ltime)
-			defer file.Close()
-
-			l.debugBuf[0] = uri
-			l.Println(l.debugBuf...)
 		}
 	}
 
