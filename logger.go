@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -217,7 +218,7 @@ func (l *Logger) appendDebug(debugstr string) {
 		return
 	}
 
-	l.debugBuf = append(l.debugBuf, debugstr)
+	l.debugBuf = append(l.debugBuf, "["+strconv.FormatInt(time.Now().Unix(), 10)+"]"+debugstr)
 }
 
 func (l *Logger) Sqlf(format string, args ...interface{}) {
