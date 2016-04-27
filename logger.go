@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/net/context"
@@ -46,6 +47,14 @@ var (
 	level = DEBUG
 )
 
+var pool sync.Pool
+
+func init() {
+	pool.New = func() interface{} {
+		return New(nil)
+	}
+}
+
 // Init Init("", "INFO")
 func Init(logPath, tmpLevel string) {
 
@@ -61,6 +70,15 @@ func Init(logPath, tmpLevel string) {
 	level = levelMap[strings.ToUpper(tmpLevel)]
 }
 
+func AccessLog(format string, args ...interface{}) {
+	file, err := openFile(accessFile)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	outputf(file, format, args...)
+}
+
 func Infof(format string, args ...interface{}) {
 	if level < INFO {
 		return
@@ -71,7 +89,7 @@ func Infof(format string, args ...interface{}) {
 		return
 	}
 	defer file.Close()
-	New(file).Printf(format, args...)
+	outputf(file, format, args...)
 }
 
 func Infoln(args ...interface{}) {
@@ -84,7 +102,7 @@ func Infoln(args ...interface{}) {
 		return
 	}
 	defer file.Close()
-	New(file).Println(args...)
+	outputln(file, args...)
 }
 
 func Errorf(format string, args ...interface{}) {
@@ -93,7 +111,7 @@ func Errorf(format string, args ...interface{}) {
 		return
 	}
 	defer file.Close()
-	New(file).Printf(format, args...)
+	outputf(file, format, args...)
 }
 
 func Errorln(args ...interface{}) {
@@ -102,7 +120,7 @@ func Errorln(args ...interface{}) {
 		return
 	}
 	defer file.Close()
-	New(file).Println(args...)
+	outputln(file, args...)
 }
 
 func Debugf(format string, args ...interface{}) {
@@ -115,7 +133,7 @@ func Debugf(format string, args ...interface{}) {
 		return
 	}
 	defer file.Close()
-	New(file).Printf(format, args...)
+	outputf(file, format, args...)
 }
 
 func Debugln(args ...interface{}) {
@@ -133,7 +151,21 @@ func Debugln(args ...interface{}) {
 	if ok {
 		args = append([]interface{}{"file:", filepath.Base(callerFile), "line:", line}, args...)
 	}
-	New(file).Println(args...)
+	outputln(file, args...)
+}
+
+func outputln(file io.Writer, args ...interface{}) {
+	_logger := GetLogger()
+	_logger.Logger = log.New(file, "", log.Lmicroseconds)
+	_logger.Println(args...)
+	PutLogger(_logger)
+}
+
+func outputf(file io.Writer, format string, args ...interface{}) {
+	_logger := GetLogger()
+	_logger.Logger = log.New(file, "", log.Lmicroseconds)
+	_logger.Printf(format, args...)
+	PutLogger(_logger)
 }
 
 func openFile(filename string) (*os.File, error) {
@@ -159,22 +191,26 @@ type Logger struct {
 	ctx context.Context
 }
 
+// GetLogger returns `*Logger` from the sync.Pool. You must return the *Logger by
+// calling `PutLogger()`.
+func GetLogger() *Logger {
+	return pool.Get().(*Logger)
+}
+
+// PutLogger returns `*Logger` instance back to the sync.Pool. You must call it after
+// `GetLogger()`.
+func PutLogger(_logger *Logger) {
+	pool.Put(_logger)
+}
+
 func New(out io.Writer) *Logger {
+	if out == nil {
+		return &Logger{}
+	}
+
 	return &Logger{
 		Logger: log.New(out, "", log.Lmicroseconds),
 	}
-}
-
-func NewLoggerContext(ctx context.Context) *Logger {
-
-	objLogger := &Logger{
-		ctx: ctx,
-	}
-
-	// 第一个元素用于最后 flush 时存 uri 信息
-	objLogger.resetBuf()
-
-	return objLogger
 }
 
 func (l *Logger) Infof(format string, args ...interface{}) {
@@ -190,6 +226,10 @@ func (l *Logger) appendInfo(info string) {
 		return
 	}
 
+	if len(l.infoBuf) == 0 {
+		l.resetBuf()
+	}
+
 	l.infoBuf = append(l.infoBuf, info)
 }
 
@@ -202,6 +242,9 @@ func (l *Logger) Errorln(args ...interface{}) {
 }
 
 func (l *Logger) appendError(errstr string) {
+	if len(l.infoBuf) == 0 {
+		l.resetBuf()
+	}
 	l.errorBuf = append(l.errorBuf, errstr)
 }
 
@@ -216,6 +259,10 @@ func (l *Logger) Debugln(args ...interface{}) {
 func (l *Logger) appendDebug(debugstr string) {
 	if level < DEBUG {
 		return
+	}
+
+	if len(l.infoBuf) == 0 {
+		l.resetBuf()
 	}
 
 	l.debugBuf = append(l.debugBuf, "["+strconv.FormatInt(time.Now().Unix(), 10)+"]"+debugstr)
@@ -234,20 +281,15 @@ func (l *Logger) appendSql(info string) {
 		return
 	}
 
+	if len(l.infoBuf) == 0 {
+		l.resetBuf()
+	}
+
 	l.sqlBuf = append(l.sqlBuf, info)
 }
 
 func (l *Logger) SetContext(ctx context.Context) {
 	l.ctx = ctx
-}
-
-func (l *Logger) AccessLog(args ...interface{}) {
-	file, err := openFile(accessFile)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	New(file).Println(args...)
 }
 
 func (l *Logger) resetBuf() {
@@ -273,7 +315,7 @@ func (l *Logger) Flush() {
 	if len(l.debugBuf) > 1 {
 		file, err = openFile(debugFile)
 		if err == nil {
-			l.Logger = log.New(file, "", log.Ltime)
+			l.Logger = log.New(file, "", log.Lmicroseconds)
 			defer file.Close()
 
 			l.debugBuf[0] = uri
@@ -284,7 +326,7 @@ func (l *Logger) Flush() {
 	if len(l.sqlBuf) > 1 {
 		file, err = openFile(sqlFile)
 		if err == nil {
-			l.Logger = log.New(file, "", log.Ltime)
+			l.Logger = log.New(file, "", log.Lmicroseconds)
 			defer file.Close()
 
 			if uri == "" {
@@ -300,7 +342,7 @@ func (l *Logger) Flush() {
 	if len(l.infoBuf) > 1 {
 		file, err = openFile(infoFile)
 		if err == nil {
-			l.Logger = log.New(file, "", log.Ltime)
+			l.Logger = log.New(file, "", log.Lmicroseconds)
 			defer file.Close()
 
 			l.infoBuf[0] = uri
@@ -311,7 +353,7 @@ func (l *Logger) Flush() {
 	if len(l.errorBuf) > 1 {
 		file, err = openFile(errorFile)
 		if err == nil {
-			l.Logger = log.New(file, "", log.Ltime)
+			l.Logger = log.New(file, "", log.Lmicroseconds)
 			defer file.Close()
 
 			l.errorBuf[0] = uri
