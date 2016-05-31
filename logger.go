@@ -2,7 +2,7 @@
 // Use of l source code is governed by a MIT-style
 // license that can be found in the LICENSE file.
 // http://studygolang.com
-// Author：polaris	polaris@studygolang.com
+// Author: polaris	polaris@studygolang.com
 
 package logger
 
@@ -56,16 +56,20 @@ func init() {
 }
 
 // Init Init("", "INFO")
-func Init(logPath, tmpLevel string) {
+func Init(logPath, tmpLevel string, prefixs ...string) {
+	prefix := ""
+	if len(prefixs) > 0 {
+		prefix = prefixs[0] + "-"
+	}
 
 	os.Mkdir(logPath, 0777)
 
-	debugFile = logPath + "/debug.log"
-	sqlFile = logPath + "/sql.log"
-	infoFile = logPath + "/info.log"
-	errorFile = logPath + "/error.log"
+	debugFile = logPath + "/" + prefix + "debug.log"
+	sqlFile = logPath + "/" + prefix + "sql.log"
+	infoFile = logPath + "/" + prefix + "info.log"
+	errorFile = logPath + "/" + prefix + "error.log"
 
-	accessFile = logPath + "/access.log"
+	accessFile = logPath + "/" + prefix + "access.log"
 
 	level = levelMap[strings.ToUpper(tmpLevel)]
 }
