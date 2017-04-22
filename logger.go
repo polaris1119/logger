@@ -7,6 +7,7 @@
 package logger
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
@@ -17,8 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/net/context"
 )
 
 const (
